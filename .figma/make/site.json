@@ -1,0 +1,10 @@
+{
+  "description": "Verify the accuracy of scientific articles by entering a URL or uploading a screenshot, helping users distinguish between true and false information.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
