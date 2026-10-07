@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback } from 'react'
+import { analyzeArticle, isSupportedArticleFile } from './api'
 
 type VerifyMode = 'url' | 'image'
-type AnalysisStatus = 'idle' | 'loading' | 'done'
+type AnalysisStatus = 'idle' | 'loading' | 'done' | 'error'
 type Verdict = 'verified' | 'fake' | 'uncertain'
 
 interface Claim {
@@ -104,9 +105,9 @@ const MOCK_RESULT: AnalysisResult = {
 
 function VerdictBadge({ verdict, size = 'sm' }: { verdict: Verdict; size?: 'sm' | 'lg' }) {
   const map = {
-    verified: { label: 'VERIFICADO', color: 'text-[--color-teal] border-[--color-teal] bg-[--color-teal-faint]' },
-    fake: { label: 'FALSO', color: 'text-[--color-red] border-[--color-red] bg-[--color-red-faint]' },
-    uncertain: { label: 'INCERTO', color: 'text-[--color-amber] border-[--color-amber] bg-[--color-amber-faint]' },
+    verified: { label: 'COMPATÍVEL', color: 'text-[--color-teal] border-[--color-teal] bg-[--color-teal-faint]' },
+    fake: { label: 'DIVERGENTE', color: 'text-[--color-red] border-[--color-red] bg-[--color-red-faint]' },
+    uncertain: { label: 'INCONCLUSIVO', color: 'text-[--color-amber] border-[--color-amber] bg-[--color-amber-faint]' },
   }
   const { label, color } = map[verdict]
   const px = size === 'lg' ? 'px-3 py-1 text-xs' : 'px-2 py-0.5 text-[10px]'
@@ -158,14 +159,14 @@ function ScoreRing({ score, verdict }: { score: number; verdict: Verdict }) {
       </svg>
       <div className="absolute text-center">
         <div className="font-mono font-semibold text-2xl" style={{ color }}>{score}</div>
-        <div className="font-mono text-[9px] text-[--color-muted] tracking-widest mt-0.5">SCORE</div>
+        <div className="font-mono text-[9px] text-[--color-muted] tracking-widest mt-0.5">CONFIANÇA</div>
       </div>
     </div>
   )
 }
 
 function AnalysisCard({ result }: { result: AnalysisResult }) {
-  const verdictLabel = { verified: 'Confiável', fake: 'Desinformação', uncertain: 'Verificação Parcial' }
+  const verdictLabel = { verified: 'Compatível com as evidências', fake: 'Possível divergência', uncertain: 'Evidência inconclusiva ou mista' }
 
   return (
     <div className="animate-slide-up mt-10 space-y-4">
@@ -661,6 +662,7 @@ export default function App() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [status, setStatus] = useState<AnalysisStatus>('idle')
   const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [errorMessage, setErrorMessage] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -679,40 +681,63 @@ export default function App() {
     if (result) setSavedArticles((prev) => [...prev, result])
   }
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (mode === 'url' && !url.trim()) return
     if (mode === 'image' && !uploadedFile) return
 
-    const submittedUrl = mode === 'url' ? url.trim() : undefined
-
     setStatus('loading')
     setResult(null)
+    setErrorMessage('')
     setShowBanner(false)
-    setTimeout(() => {
-      const r = {
-        ...MOCK_RESULT,
-        articleUrl: submittedUrl
-          ? submittedUrl.startsWith('http') ? submittedUrl : `https://${submittedUrl}`
-          : undefined,
-        healthArea: detectHealthArea(MOCK_RESULT.title),
+
+    try {
+      const apiResult = await analyzeArticle({
+        articleReference: mode === 'url' ? url.trim() : undefined,
+        file: mode === 'image' ? uploadedFile ?? undefined : undefined,
+      })
+      const r: AnalysisResult = {
+        ...apiResult,
+        healthArea: detectHealthArea(apiResult.title),
       }
       setStatus('done')
       setResult(r)
       if (!isLoggedIn) setShowBanner(true)
       else setSavedArticles((prev) => [...prev, r])
-    }, 2800)
+    } catch (error) {
+      setStatus('error')
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível concluir a análise. Verifique se o backend está rodando.',
+      )
+    }
   }
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
     const file = e.dataTransfer.files[0]
-    if (file && file.type.startsWith('image/')) setUploadedFile(file)
+    if (file && isSupportedArticleFile(file)) {
+      setUploadedFile(file)
+      setErrorMessage('')
+    } else if (file) {
+      setStatus('error')
+      setErrorMessage('Envie PDF, PNG, JPG ou WebP com até 25 MB.')
+    }
   }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) setUploadedFile(file)
+    if (!file) return
+    if (!isSupportedArticleFile(file)) {
+      setUploadedFile(null)
+      setStatus('error')
+      setErrorMessage('Envie PDF, PNG, JPG ou WebP com até 25 MB.')
+      return
+    }
+    setUploadedFile(file)
+    setErrorMessage('')
+    setStatus('idle')
   }
 
   const canAnalyze = mode === 'url' ? url.trim().length > 0 : uploadedFile !== null
@@ -835,7 +860,7 @@ export default function App() {
                     : 'text-[--color-muted] hover:text-[--color-foreground]'
                 }`}
               >
-                {m === 'url' ? '⌘  Link / URL' : '⊡  Print / Imagem'}
+                {m === 'url' ? '⌘  PMID / DOI / PubMed' : '⊡  PDF / Imagem'}
               </button>
             ))}
           </div>
@@ -844,7 +869,7 @@ export default function App() {
             {mode === 'url' ? (
               <div className="space-y-3">
                 <label className="font-mono text-[10px] text-[--color-muted] tracking-widest uppercase">
-                  URL do Artigo
+                  PMID, DOI ou link do PubMed
                 </label>
                 <div className="flex gap-3">
                   <div className="flex-1 flex items-center gap-3 bg-[--color-background] border border-[--color-border] rounded-lg px-4 focus-within:border-[--color-teal] transition-colors duration-150">
@@ -854,19 +879,19 @@ export default function App() {
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && canAnalyze && handleAnalyze()}
-                      placeholder="pubmed.ncbi.nlm.nih.gov/article/..."
+                      placeholder="PMID, DOI ou https://pubmed.ncbi.nlm.nih.gov/..."
                       className="flex-1 bg-transparent text-sm text-[--color-foreground] placeholder:text-[--color-subtle] outline-none py-3 font-mono"
                     />
                   </div>
                 </div>
                 <p className="text-xs text-[--color-muted]">
-                  Compatível com PubMed, ScienceDirect, Nature, Springer, SciELO e mais.
+                  O backend atual aceita PMID, DOI e links do PubMed/NCBI.
                 </p>
               </div>
             ) : (
               <div className="space-y-3">
                 <label className="font-mono text-[10px] text-[--color-muted] tracking-widest uppercase">
-                  Print do Artigo
+                  Arquivo do Artigo
                 </label>
                 <div
                   onClick={() => fileRef.current?.click()}
@@ -893,16 +918,16 @@ export default function App() {
                     <div className="space-y-2">
                       <div className="text-3xl text-[--color-subtle]">⊡</div>
                       <div className="text-sm text-[--color-muted]">
-                        Arraste um print aqui ou <span className="text-[--color-teal]">clique para selecionar</span>
+                        Arraste um PDF ou imagem aqui ou <span className="text-[--color-teal]">clique para selecionar</span>
                       </div>
-                      <div className="font-mono text-[10px] text-[--color-subtle]">PNG, JPG, WEBP — máx. 10 MB</div>
+                      <div className="font-mono text-[10px] text-[--color-subtle]">PDF, PNG, JPG, WEBP — máx. 25 MB</div>
                     </div>
                   )}
                 </div>
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="image/*"
+                  accept="application/pdf,image/png,image/jpeg,image/webp"
                   className="hidden"
                   onChange={handleFileChange}
                 />
@@ -943,6 +968,16 @@ export default function App() {
                 <div key={i} className="shimmer h-4 rounded w-full" style={{ width: `${70 + Math.random() * 30}%` }} />
               ))}
             </div>
+          </div>
+        )}
+
+        {status === 'error' && errorMessage && (
+          <div className="mt-6 border border-[--color-red] rounded-lg p-4 bg-[--color-red-faint] animate-slide-up">
+            <div className="font-mono text-[10px] tracking-widest text-[--color-red] mb-1">ERRO NA ANÁLISE</div>
+            <p className="text-sm text-[--color-foreground]">{errorMessage}</p>
+            <p className="text-xs text-[--color-muted] mt-2">
+              Confira se o backend FatoFake está rodando em http://127.0.0.1:5000.
+            </p>
           </div>
         )}
 
