@@ -49,60 +49,6 @@ function detectHealthArea(title: string): string {
   return 'Geral'
 }
 
-const MOCK_RESULT: AnalysisResult = {
-  title: 'Novo estudo afirma que café reduz risco de Alzheimer em 65%',
-  source: 'sciencedaily.com',
-  publishedDate: '14 set. 2026',
-  overallVerdict: 'uncertain',
-  credibilityScore: 47,
-  analysisId: 'SCI-2026-09140831',
-  claims: [
-    {
-      text: 'Consumo diário de 3 xícaras de café associado à menor incidência de Alzheimer',
-      verdict: 'verified',
-      confidence: 82,
-      note: 'Confirmado em meta-análise de 2024 com 14.000 participantes (JAMA Neurology).',
-    },
-    {
-      text: 'Redução de 65% no risco absoluto de desenvolver a doença',
-      verdict: 'fake',
-      confidence: 91,
-      note: 'Número reflete risco relativo em subgrupo, não risco absoluto. Distorção estatística.',
-    },
-    {
-      text: 'Resultado replicado em múltiplos ensaios clínicos controlados',
-      verdict: 'uncertain',
-      confidence: 55,
-      note: 'Apenas estudos observacionais. Nenhum ensaio clínico randomizado sobre este efeito.',
-    },
-    {
-      text: 'Cafeína age como protetor da barreira hematoencefálica',
-      verdict: 'verified',
-      confidence: 78,
-      note: 'Mecanismo descrito em estudos pré-clínicos com modelos murinos (Nature, 2023).',
-    },
-  ],
-  redFlags: [
-    'Título usa linguagem absoluta ("reduz") sem citar margem de erro',
-    'Percentual de 65% não consta na pesquisa original referenciada',
-    'Fonte primária é press release, não o artigo revisado por pares',
-  ],
-  supportingLinks: [
-    {
-      label: 'JAMA Neurology — Coffee and Dementia Risk',
-      url: 'https://jamanetwork.com/journals/jamaneurology/search/results?q=coffee+dementia+risk',
-    },
-    {
-      label: 'Nature — Caffeine and BBB Permeability',
-      url: 'https://www.nature.com/search?q=caffeine+blood+brain+barrier+permeability',
-    },
-    {
-      label: 'PubMed — Meta-análise café e Alzheimer 2024',
-      url: 'https://pubmed.ncbi.nlm.nih.gov/?term=coffee+alzheimer+meta-analysis&filter=years.2020-2024',
-    },
-  ],
-}
-
 function VerdictBadge({ verdict, size = 'sm' }: { verdict: Verdict; size?: 'sm' | 'lg' }) {
   const map = {
     verified: { label: 'COMPATÍVEL', color: 'text-[--color-teal] border-[--color-teal] bg-[--color-teal-faint]' },
@@ -556,7 +502,7 @@ function LoginBanner({ onLogin, onDismiss }: { onLogin: () => void; onDismiss: (
 function SavedPanel({ articles, onClose }: { articles: AnalysisResult[]; onClose: () => void }) {
   const [activeArea, setActiveArea] = useState<string>('Todas')
   const verdictColor = { verified: '#00d4aa', fake: '#f04060', uncertain: '#f5a623' }
-  const verdictLabel = { verified: 'Verificado', fake: 'Falso', uncertain: 'Incerto' }
+  const verdictLabel = { verified: 'Compatível', fake: 'Divergente', uncertain: 'Inconclusivo' }
 
   const areas = ['Todas', ...Array.from(new Set(articles.map((a) => a.healthArea ?? 'Geral')))]
   const filtered = activeArea === 'Todas' ? articles : articles.filter((a) => (a.healthArea ?? 'Geral') === activeArea)
@@ -643,7 +589,7 @@ function SavedPanel({ articles, onClose }: { articles: AnalysisResult[]; onClose
                 >
                   {verdictLabel[a.overallVerdict]}
                 </span>
-                <span className="font-mono text-[9px] text-[--color-subtle] ml-auto">Score {a.credibilityScore}</span>
+                <span className="font-mono text-[9px] text-[--color-subtle] ml-auto">Confiança {a.credibilityScore}%</span>
               </div>
               <p className="text-xs text-[--color-foreground] leading-snug line-clamp-2">{a.title}</p>
               <p className="font-mono text-[10px] text-[--color-muted]">{a.source}</p>
@@ -1167,35 +1113,18 @@ export default function App() {
                 ),
               },
               {
-                name: 'ScienceDirect',
+                name: 'PubMed Central',
                 icon: (
-                  <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
-                    <circle cx="16" cy="16" r="14" fill="none" stroke="#00d4aa" strokeWidth="2"/>
-                    <text x="16" y="21" textAnchor="middle" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="700" fontSize="13" fill="#00d4aa">SD</text>
+                  <svg width="44" height="22" viewBox="0 0 44 22" aria-hidden="true">
+                    <text x="3" y="16" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="700" fontSize="14" fill="#00d4aa">PMC</text>
                   </svg>
                 ),
               },
               {
-                name: 'Nature',
+                name: 'NCBI',
                 icon: (
-                  <svg width="30" height="34" viewBox="0 0 30 34" aria-hidden="true">
-                    <text x="15" y="28" textAnchor="middle" fontFamily="Georgia, serif" fontWeight="700" fontSize="30" fill="#00d4aa">N</text>
-                  </svg>
-                ),
-              },
-              {
-                name: 'Springer',
-                icon: (
-                  <svg width="48" height="18" viewBox="0 0 48 18" aria-hidden="true">
-                    <text x="0" y="14" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="600" fontSize="13" fill="#00d4aa">Springer</text>
-                  </svg>
-                ),
-              },
-              {
-                name: 'SciELO',
-                icon: (
-                  <svg width="42" height="18" viewBox="0 0 42 18" aria-hidden="true">
-                    <text x="0" y="14" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="700" fontSize="13" fill="#00d4aa">SciELO</text>
+                  <svg width="44" height="22" viewBox="0 0 44 22" aria-hidden="true">
+                    <text x="2" y="16" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="700" fontSize="13" fill="#00d4aa">NCBI</text>
                   </svg>
                 ),
               },
