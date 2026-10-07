@@ -939,7 +939,7 @@ export default function App() {
                   className="text-sm font-normal leading-relaxed"
                   style={{ color: '#ffffff', fontFamily: "'JetBrains Mono', monospace" }}
                 >
-                  Verificamos a confiabilidade de artigos, notícias e afirmações científicas utilizando evidências provenientes de bases acadêmicas.
+                  Comparamos afirmações científicas com evidências rastreáveis recuperadas no PubMed e no PubMed Central, apresentando compatibilidades, divergências e limites da análise.
                 </p>
                 <div className="flex items-center gap-3 flex-wrap">
                   <span
@@ -1087,35 +1087,11 @@ export default function App() {
                 ),
               },
               {
-                name: 'ScienceDirect',
+                name: 'PubMed Central',
                 icon: (
-                  <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
-                    <circle cx="16" cy="16" r="14" fill="none" stroke="#00d4aa" strokeWidth="2"/>
-                    <text x="16" y="21" textAnchor="middle" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="700" fontSize="13" fill="#00d4aa">SD</text>
-                  </svg>
-                ),
-              },
-              {
-                name: 'Nature',
-                icon: (
-                  <svg width="30" height="34" viewBox="0 0 30 34" aria-hidden="true">
-                    <text x="15" y="28" textAnchor="middle" fontFamily="Georgia, serif" fontWeight="700" fontSize="30" fill="#00d4aa">N</text>
-                  </svg>
-                ),
-              },
-              {
-                name: 'Springer',
-                icon: (
-                  <svg width="48" height="18" viewBox="0 0 48 18" aria-hidden="true">
-                    <text x="0" y="14" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="600" fontSize="13" fill="#00d4aa">Springer</text>
-                  </svg>
-                ),
-              },
-              {
-                name: 'SciELO',
-                icon: (
-                  <svg width="42" height="18" viewBox="0 0 42 18" aria-hidden="true">
-                    <text x="0" y="14" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="700" fontSize="13" fill="#00d4aa">SciELO</text>
+                  <svg width="44" height="24" viewBox="0 0 44 24" aria-hidden="true">
+                    <rect x="2" y="2" width="40" height="20" rx="5" fill="none" stroke="#00d4aa" strokeWidth="1.5"/>
+                    <text x="22" y="17" textAnchor="middle" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="700" fontSize="12" fill="#00d4aa">PMC</text>
                   </svg>
                 ),
               },
@@ -1140,7 +1116,7 @@ export default function App() {
           </div>
 
           <p className="text-center font-mono text-[10px] text-[--color-subtle] tracking-wide">
-            A seleção das fontes varia conforme o tema analisado.
+            Descoberta e metadados pelo PubMed; texto integral pelo PMC quando disponível.
           </p>
         </section>
 
@@ -1148,9 +1124,9 @@ export default function App() {
         <section className="mt-12 border border-[--color-border] rounded-xl bg-[--color-surface] p-6">
           <div className="grid grid-cols-3 divide-x divide-[--color-border] text-center">
             {[
-              { value: '98.4%', label: 'Precisão' },
-              { value: '2.1s', label: 'Tempo médio' },
-              { value: '40M+', label: 'Artigos indexados' },
+              { value: 'PubMed', label: 'Busca científica' },
+              { value: 'PMC', label: 'Texto integral' },
+              { value: '25 MB', label: 'PDF / imagem' },
             ].map(({ value, label }) => (
               <div key={label} className="px-4 space-y-1">
                 <div className="font-mono text-2xl font-semibold text-[--color-teal]">{value}</div>
