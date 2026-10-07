@@ -1,29 +1,9 @@
 import { useState, useRef, useCallback } from 'react'
+import { analyzeArticle, type AnalysisJobStatus } from './api'
+import { adaptBackendResult, type AnalysisResult, type Verdict } from './adapters'
 
 type VerifyMode = 'url' | 'image'
 type AnalysisStatus = 'idle' | 'loading' | 'done'
-type Verdict = 'verified' | 'fake' | 'uncertain'
-
-interface Claim {
-  text: string
-  verdict: Verdict
-  confidence: number
-  note: string
-}
-
-interface AnalysisResult {
-  title: string
-  source: string
-  publishedDate: string
-  overallVerdict: Verdict
-  credibilityScore: number
-  claims: Claim[]
-  redFlags: string[]
-  supportingLinks: { label: string; url: string }[]
-  analysisId: string
-  articleUrl?: string
-  healthArea?: string
-}
 
 const HEALTH_AREAS: Record<string, { color: string; bg: string }> = {
   'Neurologia':    { color: '#4d9fff', bg: '#4d9fff18' },
@@ -48,65 +28,11 @@ function detectHealthArea(title: string): string {
   return 'Geral'
 }
 
-const MOCK_RESULT: AnalysisResult = {
-  title: 'Novo estudo afirma que café reduz risco de Alzheimer em 65%',
-  source: 'sciencedaily.com',
-  publishedDate: '14 set. 2026',
-  overallVerdict: 'uncertain',
-  credibilityScore: 47,
-  analysisId: 'SCI-2026-09140831',
-  claims: [
-    {
-      text: 'Consumo diário de 3 xícaras de café associado à menor incidência de Alzheimer',
-      verdict: 'verified',
-      confidence: 82,
-      note: 'Confirmado em meta-análise de 2024 com 14.000 participantes (JAMA Neurology).',
-    },
-    {
-      text: 'Redução de 65% no risco absoluto de desenvolver a doença',
-      verdict: 'fake',
-      confidence: 91,
-      note: 'Número reflete risco relativo em subgrupo, não risco absoluto. Distorção estatística.',
-    },
-    {
-      text: 'Resultado replicado em múltiplos ensaios clínicos controlados',
-      verdict: 'uncertain',
-      confidence: 55,
-      note: 'Apenas estudos observacionais. Nenhum ensaio clínico randomizado sobre este efeito.',
-    },
-    {
-      text: 'Cafeína age como protetor da barreira hematoencefálica',
-      verdict: 'verified',
-      confidence: 78,
-      note: 'Mecanismo descrito em estudos pré-clínicos com modelos murinos (Nature, 2023).',
-    },
-  ],
-  redFlags: [
-    'Título usa linguagem absoluta ("reduz") sem citar margem de erro',
-    'Percentual de 65% não consta na pesquisa original referenciada',
-    'Fonte primária é press release, não o artigo revisado por pares',
-  ],
-  supportingLinks: [
-    {
-      label: 'JAMA Neurology — Coffee and Dementia Risk',
-      url: 'https://jamanetwork.com/journals/jamaneurology/search/results?q=coffee+dementia+risk',
-    },
-    {
-      label: 'Nature — Caffeine and BBB Permeability',
-      url: 'https://www.nature.com/search?q=caffeine+blood+brain+barrier+permeability',
-    },
-    {
-      label: 'PubMed — Meta-análise café e Alzheimer 2024',
-      url: 'https://pubmed.ncbi.nlm.nih.gov/?term=coffee+alzheimer+meta-analysis&filter=years.2020-2024',
-    },
-  ],
-}
-
 function VerdictBadge({ verdict, size = 'sm' }: { verdict: Verdict; size?: 'sm' | 'lg' }) {
   const map = {
-    verified: { label: 'VERIFICADO', color: 'text-[--color-teal] border-[--color-teal] bg-[--color-teal-faint]' },
-    fake: { label: 'FALSO', color: 'text-[--color-red] border-[--color-red] bg-[--color-red-faint]' },
-    uncertain: { label: 'INCERTO', color: 'text-[--color-amber] border-[--color-amber] bg-[--color-amber-faint]' },
+    verified: { label: 'COMPATÍVEL', color: 'text-[--color-teal] border-[--color-teal] bg-[--color-teal-faint]' },
+    fake: { label: 'DIVERGENTE', color: 'text-[--color-red] border-[--color-red] bg-[--color-red-faint]' },
+    uncertain: { label: 'INCONCLUSIVO', color: 'text-[--color-amber] border-[--color-amber] bg-[--color-amber-faint]' },
   }
   const { label, color } = map[verdict]
   const px = size === 'lg' ? 'px-3 py-1 text-xs' : 'px-2 py-0.5 text-[10px]'
@@ -158,14 +84,14 @@ function ScoreRing({ score, verdict }: { score: number; verdict: Verdict }) {
       </svg>
       <div className="absolute text-center">
         <div className="font-mono font-semibold text-2xl" style={{ color }}>{score}</div>
-        <div className="font-mono text-[9px] text-[--color-muted] tracking-widest mt-0.5">SCORE</div>
+        <div className="font-mono text-[9px] text-[--color-muted] tracking-widest mt-0.5">COMPAT.</div>
       </div>
     </div>
   )
 }
 
 function AnalysisCard({ result }: { result: AnalysisResult }) {
-  const verdictLabel = { verified: 'Confiável', fake: 'Desinformação', uncertain: 'Verificação Parcial' }
+  const verdictLabel = { verified: 'Predomínio de evidências compatíveis', fake: 'Predomínio de evidências divergentes', uncertain: 'Sem comparação direta conclusiva' }
 
   return (
     <div className="animate-slide-up mt-10 space-y-4">
@@ -670,6 +596,9 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false)
   const [showTermsModal, setShowTermsModal] = useState(false)
   const [savedArticles, setSavedArticles] = useState<AnalysisResult[]>([])
+  const [analysisProgress, setAnalysisProgress] = useState(0)
+  const [analysisPhase, setAnalysisPhase] = useState<AnalysisJobStatus | null>(null)
+  const [analysisError, setAnalysisError] = useState('')
 
   const handleLogin = (name: string) => {
     setIsLoggedIn(true)
@@ -679,35 +608,54 @@ export default function App() {
     if (result) setSavedArticles((prev) => [...prev, result])
   }
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (mode === 'url' && !url.trim()) return
     if (mode === 'image' && !uploadedFile) return
-
-    const submittedUrl = mode === 'url' ? url.trim() : undefined
 
     setStatus('loading')
     setResult(null)
     setShowBanner(false)
-    setTimeout(() => {
-      const r = {
-        ...MOCK_RESULT,
-        articleUrl: submittedUrl
-          ? submittedUrl.startsWith('http') ? submittedUrl : `https://${submittedUrl}`
-          : undefined,
-        healthArea: detectHealthArea(MOCK_RESULT.title),
+    setAnalysisError('')
+    setAnalysisProgress(0)
+    setAnalysisPhase('QUEUED')
+
+    try {
+      const job = await analyzeArticle(
+        mode === 'url'
+          ? { articleReference: url.trim() }
+          : { file: uploadedFile as File },
+        (phase, progress) => {
+          setAnalysisPhase(phase)
+          setAnalysisProgress(progress)
+        },
+      )
+
+      const adapted = adaptBackendResult(job.result, job.analysis_id)
+      const finalResult = {
+        ...adapted,
+        healthArea: detectHealthArea(adapted.title),
       }
+
+      setResult(finalResult)
       setStatus('done')
-      setResult(r)
       if (!isLoggedIn) setShowBanner(true)
-      else setSavedArticles((prev) => [...prev, r])
-    }, 2800)
+      else setSavedArticles((prev) => [...prev, finalResult])
+    } catch (error) {
+      setStatus('idle')
+      setAnalysisPhase(null)
+      setAnalysisError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível concluir a análise científica.',
+      )
+    }
   }
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
     const file = e.dataTransfer.files[0]
-    if (file && file.type.startsWith('image/')) setUploadedFile(file)
+    if (file && (file.type === 'application/pdf' || file.type.startsWith('image/'))) setUploadedFile(file)
   }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -860,13 +808,13 @@ export default function App() {
                   </div>
                 </div>
                 <p className="text-xs text-[--color-muted]">
-                  Compatível com PubMed, ScienceDirect, Nature, Springer, SciELO e mais.
+                  Nesta versão, referências e evidências são consultadas no PubMed e no PubMed Central (PMC).
                 </p>
               </div>
             ) : (
               <div className="space-y-3">
                 <label className="font-mono text-[10px] text-[--color-muted] tracking-widest uppercase">
-                  Print do Artigo
+                  PDF ou Imagem do Artigo
                 </label>
                 <div
                   onClick={() => fileRef.current?.click()}
@@ -893,16 +841,16 @@ export default function App() {
                     <div className="space-y-2">
                       <div className="text-3xl text-[--color-subtle]">⊡</div>
                       <div className="text-sm text-[--color-muted]">
-                        Arraste um print aqui ou <span className="text-[--color-teal]">clique para selecionar</span>
+                        Arraste um PDF ou imagem aqui ou <span className="text-[--color-teal]">clique para selecionar</span>
                       </div>
-                      <div className="font-mono text-[10px] text-[--color-subtle]">PNG, JPG, WEBP — máx. 10 MB</div>
+                      <div className="font-mono text-[10px] text-[--color-subtle]">PDF, PNG, JPG, WEBP — máx. 25 MB</div>
                     </div>
                   )}
                 </div>
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="image/*"
+                  accept=".pdf,image/png,image/jpeg,image/webp"
                   className="hidden"
                   onChange={handleFileChange}
                 />
@@ -922,7 +870,7 @@ export default function App() {
               {status === 'loading' ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-4 h-4 border-2 border-[--color-background] border-t-transparent rounded-full animate-spin" />
-                  Analisando...
+                  {analysisPhase === 'AWAITING_CLAIM_SELECTION' ? 'Preparando alegações...' : analysisPhase === 'RESEARCHING' ? 'Pesquisando evidências...' : `Analisando... ${analysisProgress}%`}
                 </span>
               ) : (
                 'Verificar Agora'
@@ -937,12 +885,19 @@ export default function App() {
             <div className="border border-[--color-border] rounded-lg p-5 bg-[--color-surface] space-y-3">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-2 h-2 rounded-full bg-[--color-teal] animate-pulse" />
-                <span className="font-mono text-[11px] text-[--color-teal] tracking-widest">VERIFICANDO FONTES...</span>
+                <span className="font-mono text-[11px] text-[--color-teal] tracking-widest">{analysisPhase === 'RESEARCHING' ? 'CONSULTANDO PUBMED / PMC...' : 'PROCESSANDO ARTIGO...'}</span>
               </div>
               {[...Array(4)].map((_, i) => (
                 <div key={i} className="shimmer h-4 rounded w-full" style={{ width: `${70 + Math.random() * 30}%` }} />
               ))}
             </div>
+          </div>
+        )}
+
+        {analysisError && (
+          <div className="mt-4 rounded-lg border border-[--color-red] bg-[--color-red-faint] px-4 py-3 text-sm text-[--color-foreground]">
+            <span className="font-mono text-[10px] tracking-widest text-[--color-red]">ERRO NA ANÁLISE</span>
+            <p className="mt-1 text-xs text-[--color-muted]">{analysisError}</p>
           </div>
         )}
 
@@ -984,7 +939,7 @@ export default function App() {
                   className="text-sm font-normal leading-relaxed"
                   style={{ color: '#ffffff', fontFamily: "'JetBrains Mono', monospace" }}
                 >
-                  Verificamos a confiabilidade de artigos, notícias e afirmações científicas utilizando evidências provenientes de bases acadêmicas.
+                  Comparamos afirmações científicas com evidências rastreáveis recuperadas no PubMed e no PubMed Central, apresentando compatibilidades, divergências e limites da análise.
                 </p>
                 <div className="flex items-center gap-3 flex-wrap">
                   <span
@@ -1132,35 +1087,11 @@ export default function App() {
                 ),
               },
               {
-                name: 'ScienceDirect',
+                name: 'PubMed Central',
                 icon: (
-                  <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
-                    <circle cx="16" cy="16" r="14" fill="none" stroke="#00d4aa" strokeWidth="2"/>
-                    <text x="16" y="21" textAnchor="middle" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="700" fontSize="13" fill="#00d4aa">SD</text>
-                  </svg>
-                ),
-              },
-              {
-                name: 'Nature',
-                icon: (
-                  <svg width="30" height="34" viewBox="0 0 30 34" aria-hidden="true">
-                    <text x="15" y="28" textAnchor="middle" fontFamily="Georgia, serif" fontWeight="700" fontSize="30" fill="#00d4aa">N</text>
-                  </svg>
-                ),
-              },
-              {
-                name: 'Springer',
-                icon: (
-                  <svg width="48" height="18" viewBox="0 0 48 18" aria-hidden="true">
-                    <text x="0" y="14" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="600" fontSize="13" fill="#00d4aa">Springer</text>
-                  </svg>
-                ),
-              },
-              {
-                name: 'SciELO',
-                icon: (
-                  <svg width="42" height="18" viewBox="0 0 42 18" aria-hidden="true">
-                    <text x="0" y="14" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="700" fontSize="13" fill="#00d4aa">SciELO</text>
+                  <svg width="44" height="24" viewBox="0 0 44 24" aria-hidden="true">
+                    <rect x="2" y="2" width="40" height="20" rx="5" fill="none" stroke="#00d4aa" strokeWidth="1.5"/>
+                    <text x="22" y="17" textAnchor="middle" fontFamily="Instrument Sans, Arial, sans-serif" fontWeight="700" fontSize="12" fill="#00d4aa">PMC</text>
                   </svg>
                 ),
               },
@@ -1185,7 +1116,7 @@ export default function App() {
           </div>
 
           <p className="text-center font-mono text-[10px] text-[--color-subtle] tracking-wide">
-            A seleção das fontes varia conforme o tema analisado.
+            Descoberta e metadados pelo PubMed; texto integral pelo PMC quando disponível.
           </p>
         </section>
 
@@ -1193,9 +1124,9 @@ export default function App() {
         <section className="mt-12 border border-[--color-border] rounded-xl bg-[--color-surface] p-6">
           <div className="grid grid-cols-3 divide-x divide-[--color-border] text-center">
             {[
-              { value: '98.4%', label: 'Precisão' },
-              { value: '2.1s', label: 'Tempo médio' },
-              { value: '40M+', label: 'Artigos indexados' },
+              { value: 'PubMed', label: 'Busca científica' },
+              { value: 'PMC', label: 'Texto integral' },
+              { value: '25 MB', label: 'PDF / imagem' },
             ].map(({ value, label }) => (
               <div key={label} className="px-4 space-y-1">
                 <div className="font-mono text-2xl font-semibold text-[--color-teal]">{value}</div>
