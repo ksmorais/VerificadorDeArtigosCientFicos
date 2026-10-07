@@ -48,7 +48,7 @@ function articleUrlFromSource(source: unknown, doi: unknown): string | undefined
   return undefined
 }
 
-export function adaptBackendResult(data: any, analysisId: string): AnalysisResult {
+function adaptSingleResult(data: any, analysisId: string): AnalysisResult {
   const submitted = data?.submitted_article ?? {}
   const narrative = data?.user_summary ?? {}
   const findings = Array.isArray(narrative.findings) ? narrative.findings : []
@@ -147,5 +147,55 @@ export function adaptBackendResult(data: any, analysisId: string): AnalysisResul
     analysisId,
     articleUrl: sourceUrl,
     healthArea: 'Geral',
+  }
+}
+
+export function adaptBackendResult(data: any, analysisId: string): AnalysisResult {
+  const article = adaptSingleResult(data, analysisId)
+  const analyses = Array.isArray(data?.claim_analyses) ? data.claim_analyses : []
+  if (!analyses.length) return article
+
+  let supports = 0
+  let contradicts = 0
+  const claims: Claim[] = []
+  const redFlags: string[] = []
+  const supportingLinks: AnalysisResult['supportingLinks'] = []
+
+  // The top-level result mirrors the first claim; count only the entries here.
+  for (const [index, analysis] of analyses.entries()) {
+    const claimText = analysis.claim?.text || analysis.result?.user_summary?.claim || `Alegação ${index + 1}`
+    const result = adaptSingleResult(analysis.result, analysisId)
+    const balance = analysis.result?.user_summary?.evidence_balance ?? {}
+    supports += Number(balance.SUPPORTS ?? 0)
+    contradicts += Number(balance.CONTRADICTS ?? 0)
+
+    if (result.claims.length) {
+      claims.push(...result.claims.map((finding) => ({
+        ...finding,
+        note: `Alegação: ${claimText}\n${finding.note}`,
+      })))
+    } else {
+      claims.push({
+        text: claimText,
+        verdict: 'uncertain',
+        confidence: 0,
+        note: 'Não houve trecho independente diretamente comparável nesta execução.',
+      })
+    }
+    redFlags.push(...result.redFlags.map((flag) => `${claimText}: ${flag}`))
+    supportingLinks.push(...result.supportingLinks.map((link) => ({
+      ...link,
+      label: `${claimText} — ${link.label}`,
+    })))
+  }
+
+  const directTotal = supports + contradicts
+  return {
+    ...article,
+    overallVerdict: supports > contradicts ? 'verified' : contradicts > supports ? 'fake' : 'uncertain',
+    credibilityScore: directTotal > 0 ? Math.round((supports / directTotal) * 100) : 0,
+    claims,
+    redFlags: [...new Set(redFlags)],
+    supportingLinks,
   }
 }

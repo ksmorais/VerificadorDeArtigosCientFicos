@@ -36,7 +36,15 @@ export type AnalysisProgressCallback = (
   progress: number,
 ) => void
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+
+export function normalizeArticleReference(reference: string): string {
+  const trimmed = reference.trim()
+  if (/^(?:\/\/)?pubmed\.ncbi\.nlm\.nih\.gov(?:\/|$)/i.test(trimmed)) {
+    return `https://${trimmed.replace(/^\/\//, '')}`
+  }
+  return trimmed
+}
 
 function apiUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) return path
@@ -183,7 +191,7 @@ export async function analyzeArticle(
 
   if ('articleReference' in input) {
     created = await createArticleAnalysis({
-      article_reference: input.articleReference.trim(),
+      article_reference: normalizeArticleReference(input.articleReference),
     })
   } else {
     const allowedTypes = new Set([
